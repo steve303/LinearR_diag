@@ -1,0 +1,461 @@
+---
+title: "Week 8 - Homework"
+author: "STAT 420, Summer 2020, D. Unger"
+date: ''
+output:
+  html_document: 
+    theme: readable
+    toc: yes
+  pdf_document: default
+urlcolor: cyan
+---
+
+
+
+***
+
+```{r setup, echo = FALSE, message = FALSE, warning = FALSE}
+options(scipen = 1, digits = 4, width = 80, fig.alin = "center")
+```
+
+## Exercise 1 (Writing Functions)
+
+**(a)** Write a function named `diagnostics` that takes as input the arguments:
+
+- `model`, an object of class `lm()`, that is a model fit via `lm()`
+- `pcol`, for controlling point colors in plots, with a default value of `grey`
+- `lcol`, for controlling line colors in plots, with a default value of `dodgerblue`
+- `alpha`, the significance level of any test that will be performed inside the function, with a default value of `0.05`
+- `plotit`, a logical value for controlling display of plots with default value `TRUE`
+- `testit`, a logical value for controlling outputting the results of tests with default value `TRUE`
+
+The function should output:
+
+- A list with two elements when `testit` is `TRUE`:
+    - `p_val`, the p-value for the Shapiro-Wilk test for assessing normality
+    - `decision`, the decision made when performing the Shapiro-Wilk test using the `alpha` value input to the function. "Reject" if the null hypothesis is rejected, otherwise "Fail to Reject."
+- Two plots, side-by-side, when `plotit` is `TRUE`:
+    - A fitted versus residuals plot that adds a horizontal line at $y = 0$, and labels the $x$-axis "Fitted" and the $y$-axis "Residuals." The points and line should be colored according to the input arguments. Give the plot a title. 
+    - A Normal Q-Q plot of the residuals that adds the appropriate line using `qqline()`. The points and line should be colored according to the input arguments. Be sure the plot has a title. 
+
+Consider using this function to help with the remainder of the assignment as well.
+```{r}
+diagnostics = function(model, pcol = "grey", lcol = "dodgerblue", 
+                       alpha = 0.05, plotit = TRUE, testit = TRUE) {
+  
+  if (plotit == TRUE) {
+    par(mfrow = c(1,2))
+    plot(fitted(model), resid(model), col = pcol, main = "Fitted vs Residuals Plot", xlab = "Fitted",
+         ylab = "Residuals")
+    abline(h = 0, col = lcol)
+    qqnorm(resid(model), col = pcol)
+    qqline(resid(model), col = lcol)
+    
+  }
+  if (testit == TRUE) { 
+    pval = (shapiro.test(resid(model))[[2]])
+    result = ifelse(pval < alpha, "Reject", "Fail to Reject")
+    list(p_val = pval, decision = result)
+  }
+}
+```
+
+
+
+**(b)** Run the following code.
+
+```{r}
+set.seed(40)
+
+data_1 = data.frame(x = runif(n = 30, min = 0, max = 10),
+                    y = rep(x = 0, times = 30))
+data_1$y = with(data_1, 2 + 1 * x + rexp(n = 30))
+fit_1 = lm(y ~ x, data = data_1)
+
+data_2 = data.frame(x = runif(n = 20, min = 0, max = 10),
+                    y = rep(x = 0, times = 20))
+data_2$y = with(data_2, 5 + 2 * x + rnorm(n = 20))
+fit_2 = lm(y ~ x, data = data_2)
+
+data_3 = data.frame(x = runif(n = 40, min = 0, max = 10),
+                    y = rep(x = 0, times = 40))
+data_3$y = with(data_3, 2 + 1 * x + rnorm(n = 40, sd = x))
+fit_3 = lm(y ~ x, data = data_3)
+```
+
+```{r, eval = TRUE}
+diagnostics(fit_1, plotit = FALSE)$p_val
+diagnostics(fit_2, plotit = FALSE)$decision
+diagnostics(fit_1, testit = FALSE, pcol = "black", lcol = "black")
+diagnostics(fit_2, testit = FALSE, pcol = "grey", lcol = "green")
+diagnostics(fit_3)
+```
+
+
+
+***
+
+## Exercise 2 (Prostate Cancer Data)
+
+For this exercise, we will use the `prostate` data, which can be found in the `faraway` package. After loading the `faraway` package, use `?prostate` to learn about this dataset.
+
+```{r, message = FALSE, warning = FALSE}
+library(faraway)
+library(lmtest)
+```
+
+**(a)** Fit an additive multiple regression model with `lpsa` as the response and the remaining variables in the `prostate` dataset as predictors. Report the $R^2$ value for this model.
+
+```{r}
+model = lm(lpsa ~ ., data = prostate)
+rsq = summary(model)$r.squared
+rsq
+```
+The fitted linear model has a R squared value of `r rsq`.
+
+**(b)** Check the constant variance assumption for this model. Do you feel it has been violated? Justify your answer.
+
+```{r}
+plot(fitted(model), resid(model), main = "Fitted vs Residual Plot", col = "black")
+abline(h = 0, col = "blue")
+bptest(model)
+pvalue = bptest(model)$p.value 
+pvalue
+```
+Constant variance does not seem to be violated.  There is no obvious pattern in the fitted vs residual plot and the Breusch-Pagan test has a p-value of `r pvalue` which is larger than my chosen $\alpha = 0.05$.  Therefore we fail to reject the null hypothesis.  We cannot conclude that the variance is different.    
+
+**(c)** Check the normality assumption for this model. Do you feel it has been violated? Justify your answer.
+
+```{r}
+qqnorm(resid(model))
+qqline(resid(model), col = "blue")
+shapiro.test(resid(model))
+pval = shapiro.test(resid(model))$p.value
+pval
+```
+Normality of the residuals does not seem to be violated.  The p-value from the Shapiro-Wilk test is `r pval` which is greater than my criteria of $\alpha = 0.05$.  Therefore we fail to reject the null hypothesis.  For the most part the residuals fall along the qqline.  
+
+**(d)** Check for any high leverage observations. Report any observations you determine to have high leverage.
+
+```{r}
+h = hatvalues(model)
+#filter = h > 2*mean(h)
+ind = which(h > 2*mean(h))
+#all.equal(sum(h)/97, mean(h))
+obs_d = as.vector(ind)
+obs_d
+
+```
+Five observations were determined as "high" if its leverage value, $h_i$, was greater than $2*\bar h$.  The indices of these observations were: `r obs_d`.  
+
+
+**(e)** Check for any influential observations. Report any observations you determine to be influential.
+```{r}
+cook = cooks.distance(model)
+ind_e = as.vector(which(cook > 4/nrow(prostate)))
+ind_e
+```
+
+The indices of the observations which have high influence, $cook's\ distance\ >\ 4/n$, are `r ind_e`.
+
+**(f)** Refit the additive multiple regression model without any points you identified as influential. Compare the coefficients of this fitted model to the previously fitted model.
+
+```{r, results="asis", warning=FALSE}
+library(knitr)
+cook_f = cook < 4/nrow(prostate)
+model_refit = lm(lpsa ~ ., data = prostate, subset = cook_f)
+rsq_refit = summary(model_refit)$r.squared
+rsq_refit
+a=coef(model)
+b=coef(model_refit)
+df_coef = rbind(model_0=a, model_refit = b)
+kable(df_coef, caption = "Beta coefficients" )
+
+```
+
+The re-fitted model has a better R squared value because of the removed high influence observations.  The original R squared value was `r rsq` and the re-fitted R squared value is `r rsq_refit`.  As a consequence, each beta coefficient has been updated due to the removal of the observations as shown in the data frame above.    
+
+**(g)** Create a data frame that stores the observations that were "removed" because they were influential. Use the two models you have fit to make predictions with these observations. Comment on the difference between these two sets of predictions.
+
+```{r}
+#df_refit = subset(prostate, cook_f)
+df_remov = prostate[ind_e,]
+y_refit = predict(model_refit, newdata = df_remov)
+y_0     = predict(model, newdata = df_remov)
+```
+
+```{r, results="asis"}
+y_obs = df_remov$lpsa
+df_y = rbind(model_0 = y_0, model_refit = y_refit)
+kable(df_y, caption = "Prediction of lpsa values for model_0 and model_refit at high influence observations")
+```
+
+
+```{r}
+v1 = c(y_0, y_refit, as.vector(df_remov$lpsa))
+v = seq(1,7,1)
+v2 = c(v,v,v)
+v3 = c(rep(1,7), rep(2,7), rep(3,7))
+plot(v1 ~ v2, col = v3, xlab = "Observation", ylab = "lpsa value", main = "Predicted lpsa value vs observation w high influence")
+legend("bottomright", c("y_model_0", "y_model_refit", "y_obs"), col = c(1,2,3), pch = 1)
+```
+
+The predicted y values (lspa) for both model_0 (original model) and the refit model (model_refit) are listed in the table and plot above.  Note, in the plot above, the Observation (x axis) just refers to the series in numerical order of the high influence observation, for instance Observation one refers to the 1st high influence observation which is index number 32, etc.  In most points there is a noticeable difference in predicted lspa value between the two models.  These are the black and green points in the plot, model_0 and model_refit, repsectively.  The green points refer to the original lspa data from the prostate data frame.  For the most part the observed y values (green points) are typically further away from the model_refit (red points) compared to model_0 (black points).  This suggests that model_0 tends to fit closer to the original high influence data points which were taken out in model_refit model.  
+
+***
+
+## Exercise 3 (Why Bother?)
+
+**Why** do we care about violations of assumptions? One key reason is that the distributions of the parameter esimators that we have used are all reliant on these assumptions. When the assumptions are violated, the distributional results are not correct, so our tests are garbage. **Garbage In, Garbage Out!**
+
+Consider the following setup that we will use for the remainder of the exercise. We choose a sample size of 50.
+
+```{r}
+n = 50
+set.seed(420)
+x_1 = runif(n, 0, 5)
+x_2 = runif(n, -2, 2)
+```
+
+Consider the model,
+
+\[
+Y = 4 + 1 x_1 + 0 x_2 + \epsilon.
+\]
+
+That is,
+
+- $\beta_0$ = 4
+- $\beta_1$ = 1
+- $\beta_2$ = 0
+
+We now simulate `y_1` in a manner that does **not** violate any assumptions, which we will verify. In this case $\epsilon \sim N(0, 1).$
+
+```{r}
+set.seed(83)
+library(lmtest)
+y_1 = 4 + 1 * x_1 + 0 * x_2 + rnorm(n = n, mean = 0, sd = 1)
+fit_1 = lm(y_1 ~ x_1 + x_2)
+bptest(fit_1)
+```
+
+Then, we simulate `y_2` in a manner that **does** violate assumptions, which we again verify. In this case $\epsilon \sim N(0, \sigma = |x_2|).$
+
+```{r}
+set.seed(83)
+y_2 = 4 + 1 * x_1 + 0 * x_2 + rnorm(n = n, mean = 0, sd = abs(x_2))
+fit_2 = lm(y_2 ~ x_1 + x_2)
+bptest(fit_2)
+```
+
+```{r}
+summary(fit_2)$coef
+```
+
+**(a)** Use the following code after changing `birthday` to your birthday.
+
+```{r}
+num_sims = 2500
+p_val_1 = rep(0, num_sims)
+p_val_2 = rep(0, num_sims)
+birthday = 03031970
+set.seed(birthday)
+```
+
+```{r}
+for (i in (1:num_sims)) {
+ 
+  x_1 = runif(n, 0, 5)
+  x_2 = runif(n, -2, 2)
+  
+  y_1 = 4 + 1 * x_1 + 0 * x_2 + rnorm(n = n, mean = 0, sd = 1)
+  fit_1 = lm(y_1 ~ x_1 + x_2)
+  p_val_1[i] = summary(fit_1)$coef[3,"Pr(>|t|)"]
+ 
+  y_2 = 4 + 1 * x_1 + 0 * x_2 + rnorm(n = n, mean = 0, sd = abs(x_2))
+  fit_2 = lm(y_2 ~ x_1 + x_2)
+  p_val_2[i] = summary(fit_2)$coef[3,"Pr(>|t|)"]
+  
+}
+```
+Repeat the above process of generating `y_1` and `y_2` as defined above, and fit models with each as the response `2500` times. Each time, store the p-value for testing,
+
+\[
+\beta_2 = 0,
+\]
+
+using both models, in the appropriate variables defined above. (You do not need to use a data frame as we have in the past. Although, feel free to modify the code to instead use a data frame.)
+
+
+
+
+**(b)** What proportion of the `p_val_1` values is less than 0.01? Less than 0.05? Less than 0.10? What proportion of the `p_val_2` values is less than 0.01? Less than 0.05? Less than 0.10? Arrange your results in a table. Briefly explain these results.
+
+
+
+```{r}
+p01_1 = mean(p_val_1 < 0.01)
+p05_1 = mean(p_val_1 < 0.05)
+p10_1 = mean(p_val_1 < 0.10)
+
+p01_2 = mean(p_val_2 < 0.01)
+p05_2 = mean(p_val_2 < 0.05)
+p10_2 = mean(p_val_2 < 0.10)
+
+df_pval = data.frame(model_1 = c(p01_1, p05_1, p10_1), model_2 = c(p01_2, p05_2, p10_2))
+rownames(df_pval) = c("p<0.01", "p<0.05", "p<0.10")
+kable(df_pval, caption = "Ratios of p-values for Model 1 and 2")
+
+```
+
+In model two, the assumption of constant variance is violated. The variance increases with $x_2$ and therefore is not independent.  In model 2 more observations are further away from the expected mean as $x_2$ increases causing the t-statistic for $\hat \beta_2$ to be higher.  The most obvious observation after running the simulations is that model two has a higher percentage of lower p-values compared to model one.  This is true for each p-values of 0.01, 0.05, and 0.10.  
+
+The danger for not abiding by the assumption of constant variance of model two is we would be erroneously rejecting the the null hypothesis at a higher percentage compared to model one.  For example, if we use a criteria of $\alpha = 0.01$, model two would be rejecting the null hypothesis at a higher ratio of 0.0516 (model 2) versus 0.01 (model 1). We shouldn't be rejecting the null hypothesis because we know the true model has $\beta_2 = 0$.  The situation becomes worse if we use a criteria of $\alpha = 0.05\ and\ 0.10$.     
+
+***
+
+## Exercise 4 (Corrosion Data)
+
+For this exercise, we will use the `corrosion` data, which can be found in the `faraway` package. After loading the `faraway` package, use `?corrosion` to learn about this dataset.
+
+```{r, message = FALSE, warning = FALSE}
+library(faraway)
+```
+
+**(a)** Fit a simple linear regression with `loss` as the response and `Fe` as the predictor. Plot a scatterplot and add the fitted line. Check the assumptions of this model.
+
+```{r}
+m1 = lm(loss ~ Fe, data = corrosion)
+plot(loss ~ Fe, data = corrosion, main = "Loss vs Fe")
+abline(m1, col = "blue")
+summary(m1)
+```
+
+
+```{r}
+diagnostics(m1)
+
+bptest(m1)
+```
+
+Both assumptions of constant variance and normality of the residuals are not violated using a criteria of $\alpha = 0.05$.  The Breusch Pagan's p-value was 0.373 and the Shapiro Wilkes' p-value was 0.9.
+
+**(b)** Fit higher order polynomial models of degree 2, 3, and 4. For each, plot a fitted versus residuals plot and comment on the constant variance assumption. Based on those plots, which of these three models do you think are acceptable? Use a statistical test(s) to compare the models you just chose. Based on the test, which is preferred? Check the normality assumption of this model. Identify any influential observations of this model.
+
+```{r}
+m2 = lm(loss ~ Fe + I(Fe^2), data = corrosion)
+m3 = lm(loss ~ Fe + I(Fe^2) + I(Fe^3), data = corrosion)
+m4 = lm(loss ~ Fe + I(Fe^2) + I(Fe^3) + I(Fe^4), data = corrosion)
+```
+
+```{r, eval=FALSE}
+summary(m2)
+summary(m3)
+summary(m4)
+```
+
+
+```{r, results="asis"}
+
+bp_list = lapply(list(m2, m3, m4), bptest)
+sw_list = lapply(list(resid(m2), resid(m3), resid(m4)), shapiro.test)
+df_stats = data.frame(deg2 = c(bp_list[[1]]$p.value, sw_list[[1]]$p.value), deg3 = c(bp_list[[2]]$p.value, sw_list[[2]]$p.value), deg4 = c(bp_list[[3]]$p.value, sw_list[[3]]$p.value ))
+rownames(df_stats) = c("Breusch Pagan test - P value", "Shapiro Wilkes test - P value")
+kable(df_stats, caption = "BP and SW test p-values")
+```
+
+```{r}
+diagnostics(m2, testit = FALSE)
+diagnostics(m3, testit = FALSE)
+diagnostics(m4, testit = FALSE)
+```
+
+```{r}
+index_m1 = which(cooks.distance(m1) > 4/nrow(corrosion))
+index_m2 = which(cooks.distance(m2) > 4/nrow(corrosion))
+index_m3 = which(cooks.distance(m3) > 4/nrow(corrosion))
+index_m4 = which(cooks.distance(m4) > 4/nrow(corrosion))
+list(deg1 = as.vector(index_m1), deg2 = as.vector(index_m2), deg3 = as.vector(index_m3), deg4 = as.vector(index_m4))
+```
+
+***
+
+For each polynominal model, 2nd, 3rd, and 4th degrees, all had p-values greater than 0.05 for both Breusch Pagan and Shapiro Wilkes test (see table and plots above). With a criteria of $\alpha = 0.05$ we fail to reject the null hypothesis.  Therefore we assume that the constant variance and normality of the residuals were not violated in any of the polynomial models.  
+
+The SLR model fit in part(a) looks very reasonable and fitting a higher order polynomial may cause overfitting.  In this case I would choose the simplest model to avoid overfitting. 
+
+For all models evaluated, each had one influential observation except for the 3rd degree polynomial model.  Models, degrees 1 and 2, both had an influential observation at index number 13.  The degree 4 model had one observation at index 5. 
+
+
+## Exercise 5 (Diamonds)
+
+The data set `diamonds` from the `ggplot2` package contains prices and characteristics of 54,000 diamonds. For this exercise, use `price` as the response variable $y$, and `carat` as the predictor $x$. Use `?diamonds` to learn more.
+
+```{r, message = FALSE, warning = FALSE}
+library(ggplot2)
+```
+
+**(a)** Fit a linear model with `price` as the response variable $y$, and `carat` as the predictor $x$. Return the summary information of this model.
+```{r}
+m_diamonds = lm(price ~ carat, data = diamonds)
+summary(m_diamonds)
+```
+
+
+**(b)** Plot a scatterplot of price versus carat and add the line for the fitted model in part **(a)**. Using a fitted versus residuals plot and/or a Q-Q plot, comment on the diagnostics. 
+```{r}
+plot(price ~ carat, data = diamonds, col = "darkgrey", main = "Price vs Carat")
+abline(m_diamonds, col = "dodger blue", lwd = 2)
+```
+
+```{r}
+diagnostics(m_diamonds, testit = FALSE)
+```
+
+Both the constant variance and normality of the residuals seem to be violated as observed in the Fitted vs Residuals plot and the Q-Q plot.  Some of the residuals in the Fitted vs Residual plot are not centered at zero and the variance is not constant as a function of the Fitted values.  The Q-Q plot has a lot of deviation at the ends relative to the Q-Q line.
+
+**(c)** Seeing as the price stretches over several orders of magnitude, it seems reasonable to try a log transformation of the response. Fit a model with a logged response, plot a scatterplot of log-price versus carat and add the line for the fitted model, then use a fitted versus residuals plot and/or a Q-Q plot to comment on the diagnostics of the model.
+
+```{r}
+qplot(price, data = diamonds, bins = 30)
+```
+
+```{r}
+m_diamonds_log = lm(log(price) ~ carat, data = diamonds)
+plot(log(price) ~ carat, data = diamonds, col = "darkgrey")
+abline(m_diamonds_log)
+```
+```{r}
+diagnostics(m_diamonds_log, testit = FALSE)
+```
+
+After log transformation of the response, the constant variance and normality are still violated. However the Q-Q plot has some improvement at one end of the quantile values.  
+
+**(d)** Try adding log transformation of the predictor. Fit a model with a logged response and logged predictor, plot a scatterplot of log-price versus log-carat and add the line for the fitted model, then use a fitted versus residuals plot and/or a Q-Q plot to comment on the diagnostics of the model.
+```{r}
+m_diamonds_loglog = lm(log(price) ~ log(carat), data = diamonds)
+plot(log(price) ~ log(carat), data = diamonds, col = "darkgrey")
+abline(m_diamonds_loglog)
+```
+```{r}
+diagnostics(m_diamonds_loglog, testit = FALSE)
+
+```
+```{r}
+bptest(m_diamonds_loglog)
+```
+
+
+The Fitted vs Residual and Q-Q plots still have some issues with constant variance and normality but look much better compared to the two previous models.  The log transformation of the predictor and repsonse show some improvement, especially with the fit.  However, the Breusch-Pagan would still reject constant variance with a p-value of <2e-16, even if we set criteria conservatively to $\alpha = 0.01$. Furthermore, the Q-Q plot still shows some deviations at the outer margins of the Q-Q line.   
+
+
+**(e)** Use the model from part **(d)** to predict the price (in dollars) of a 3-carat diamond. Construct a 99% prediction interval for the price (in dollars).
+
+```{r}
+#don't forget to change back to original units
+pi_log = predict(m_diamonds_loglog, newdata = data.frame(carat = 3), interval = "prediction", level = 0.99)
+c(exp(pi_log[[2]]), exp(pi_log[[3]]))
+
+```
+
+The 99% prediction interval for price in dollars of a 3 carat diamond is from 14959 to 57894 dollars. 
